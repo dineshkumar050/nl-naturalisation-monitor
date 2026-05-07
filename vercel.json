@@ -1,12 +1,15 @@
 {
   "version": 2,
   "functions": {
-    "api/server.js": {
-      "maxDuration": 60
-    }
+    "api/run.js": { "maxDuration": 60 },
+    "api/run-with-email.js": { "maxDuration": 60 }
   },
   "routes": [
-    { "src": "/api/(.*)", "dest": "api/server.js" },
+    { "src": "/api/status", "dest": "/api/status.js" },
+    { "src": "/api/logs", "dest": "/api/logs.js" },
+    { "src": "/api/run-with-email", "dest": "/api/run-with-email.js" },
+    { "src": "/api/run", "dest": "/api/run.js" },
+    { "src": "/api/sources", "dest": "/api/sources.js" },
     { "src": "/(.*)", "dest": "/build/$1" }
   ]
 }
