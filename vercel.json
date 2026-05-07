@@ -4,12 +4,14 @@
     "api/run.js": { "maxDuration": 60 },
     "api/run-with-email.js": { "maxDuration": 60 }
   },
-  "routes": [
-    { "src": "/api/status", "dest": "/api/status.js" },
-    { "src": "/api/logs", "dest": "/api/logs.js" },
-    { "src": "/api/run-with-email", "dest": "/api/run-with-email.js" },
-    { "src": "/api/run", "dest": "/api/run.js" },
-    { "src": "/api/sources", "dest": "/api/sources.js" },
-    { "src": "/(.*)", "dest": "/build/$1" }
+  "rewrites": [
+    { "source": "/api/status", "destination": "/api/status.js" },
+    { "source": "/api/logs", "destination": "/api/logs.js" },
+    {
+      "source": "/api/run-with-email",
+      "destination": "/api/run-with-email.js"
+    },
+    { "source": "/api/run", "destination": "/api/run.js" },
+    { "source": "/api/sources", "destination": "/api/sources.js" }
   ]
 }
