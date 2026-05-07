@@ -24,7 +24,7 @@ function logRun(result) {
 
 // ── Schedule cron ─────────────────────────────────────────────────────────────
 function startCron() {
-  const schedule = process.env.CRON_SCHEDULE || "0 */6 * * *"; // every 6 hours
+  const schedule = process.env.CRON_SCHEDULE || "0 */6 * * *";
   if (cronJob) cronJob.stop();
 
   cronJob = cron.schedule(schedule, async () => {
@@ -41,36 +41,31 @@ function startCron() {
     }
   });
 
-  // Calculate next run for display
   const interval = parseInt((schedule.match(/\*\/(\d+)/) || [])[1] || "6");
   nextRunTime = new Date(Date.now() + interval * 60 * 60 * 1000).toISOString();
-  console.log(`⏰ Cron scheduled: ${schedule} (next ~${nextRunTime})`);
+  console.log(`⏰ Cron scheduled: ${schedule}`);
 }
 
 startCron();
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 
-// GET /api/status — dashboard status
 app.get("/api/status", (req, res) => {
-  const lastRun = runLog[0] || null;
   res.json({
     status: "running",
     isRunning,
     nextRunTime,
-    lastRun,
+    lastRun: runLog[0] || null,
     totalRuns: runLog.length,
     sources: SOURCES.map((s) => ({ name: s.name, url: s.url })),
     schedule: process.env.CRON_SCHEDULE || "0 */6 * * *",
   });
 });
 
-// GET /api/logs — run history
 app.get("/api/logs", (req, res) => {
   res.json({ logs: runLog });
 });
 
-// POST /api/run — manual trigger
 app.post("/api/run", async (req, res) => {
   if (isRunning) {
     return res.status(409).json({ error: "Agent is already running" });
@@ -79,8 +74,7 @@ app.post("/api/run", async (req, res) => {
   res.json({ message: "Agent triggered. Check /api/logs for results." });
 
   try {
-    const forceEmail = req.body?.forceEmail === true;
-    const result = await runAgent({ forceEmail });
+    const result = await runAgent({ forceEmail: false });
     logRun(result);
   } catch (err) {
     console.error("Manual run error:", err.message);
@@ -90,25 +84,24 @@ app.post("/api/run", async (req, res) => {
   }
 });
 
-// POST /api/run-with-email — manual trigger, always send email (test mode)
 app.post("/api/run-with-email", async (req, res) => {
   if (isRunning) {
     return res.status(409).json({ error: "Agent is already running" });
   }
   isRunning = true;
-  res.json({ message: "Agent triggered with forced email. Check /api/logs for results." });
+  res.json({ message: "Agent triggered with forced email." });
 
   try {
     const result = await runAgent({ forceEmail: true });
     logRun(result);
   } catch (err) {
+    console.error("Run-with-email error:", err.message);
     logRun({ timestamp: new Date().toISOString(), error: err.message });
   } finally {
     isRunning = false;
   }
 });
 
-// GET /api/sources — list monitored sources
 app.get("/api/sources", (req, res) => {
   res.json({ sources: SOURCES });
 });
