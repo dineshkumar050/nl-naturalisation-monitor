@@ -60,7 +60,7 @@ async function analyseWithClaude(scrapedSources) {
       (s, i) =>
         `SOURCE ${i + 1}: ${s.name}\nURL: ${s.url}\n${
           s.error ? `ERROR: ${s.error}` : `CONTENT:\n${s.content}`
-        }`
+        }`,
     )
     .join("\n\n---\n\n");
 
@@ -97,14 +97,16 @@ Rules:
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1000,
       messages: [{ role: "user", content: prompt }],
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Claude API error: ${response.status} ${response.statusText}`,
+    );
   }
 
   const data = await response.json();
@@ -117,7 +119,8 @@ Rules:
     return {
       changeDetected: false,
       confidence: "low",
-      summary: "Claude returned an unparseable response. Raw: " + raw.slice(0, 300),
+      summary:
+        "Claude returned an unparseable response. Raw: " + raw.slice(0, 300),
       relevantExcerpts: [],
       relevantUrls: [],
       currentStatus: "Unknown",
@@ -150,12 +153,17 @@ async function sendEmail(analysis, scrapedSources) {
   const excerpts =
     analysis.relevantExcerpts?.length > 0
       ? analysis.relevantExcerpts
-          .map((e) => `<blockquote style="border-left:3px solid #e63946;padding-left:12px;color:#555;font-style:italic">${e}</blockquote>`)
+          .map(
+            (e) =>
+              `<blockquote style="border-left:3px solid #e63946;padding-left:12px;color:#555;font-style:italic">${e}</blockquote>`,
+          )
           .join("")
       : "<p>No specific excerpts.</p>";
 
   const alertColor = analysis.changeDetected ? "#e63946" : "#2a9d8f";
-  const alertLabel = analysis.changeDetected ? "⚠️ CHANGE DETECTED" : "✅ No Change Detected";
+  const alertLabel = analysis.changeDetected
+    ? "⚠️ CHANGE DETECTED"
+    : "✅ No Change Detected";
 
   const html = `
 <!DOCTYPE html>
@@ -185,10 +193,14 @@ async function sendEmail(analysis, scrapedSources) {
       <h3 style="color:#003087;font-size:15px;margin:0 0 8px">📋 Current Policy Status</h3>
       <p style="color:#444;font-size:14px;line-height:1.6;margin:0 0 20px;background:#f1f3f5;padding:12px 16px;border-radius:6px">${analysis.currentStatus}</p>
 
-      ${analysis.relevantExcerpts?.length > 0 ? `
+      ${
+        analysis.relevantExcerpts?.length > 0
+          ? `
       <h3 style="color:#003087;font-size:15px;margin:0 0 8px">💬 Relevant Excerpts</h3>
       <div style="margin-bottom:20px">${excerpts}</div>
-      ` : ""}
+      `
+          : ""
+      }
 
       <h3 style="color:#003087;font-size:15px;margin:0 0 8px">🔗 Key Links to Check</h3>
       <ul style="font-size:14px;color:#1a73e8;line-height:2;margin:0 0 20px;padding-left:20px">${relevantLinks}</ul>
@@ -233,12 +245,16 @@ async function runAgent({ forceEmail = false } = {}) {
   console.log(`[${timestamp}] 📡 Scraping ${SOURCES.length} sources...`);
   const scrapedSources = await Promise.all(SOURCES.map(fetchSource));
   const successCount = scrapedSources.filter((s) => !s.error).length;
-  console.log(`[${timestamp}] ✅ Scraped ${successCount}/${SOURCES.length} sources`);
+  console.log(
+    `[${timestamp}] ✅ Scraped ${successCount}/${SOURCES.length} sources`,
+  );
 
   // Step 2: Claude analysis
   console.log(`[${timestamp}] 🧠 Analysing with Claude...`);
   const analysis = await analyseWithClaude(scrapedSources);
-  console.log(`[${timestamp}] 🔍 Change detected: ${analysis.changeDetected} (${analysis.confidence})`);
+  console.log(
+    `[${timestamp}] 🔍 Change detected: ${analysis.changeDetected} (${analysis.confidence})`,
+  );
 
   // Step 3: Send email if change detected OR forced
   let emailSent = false;
