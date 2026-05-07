@@ -86,12 +86,12 @@ async function analyseWithClaude() {
     body: JSON.stringify({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1000,
-      tools: [
+      /*tools: [
         {
           type: "web_search_20250305",
           name: "web_search",
         },
-      ],
+      ],*/
       messages: [{ role: "user", content: prompt }],
     }),
   });
