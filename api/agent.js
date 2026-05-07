@@ -54,77 +54,94 @@ async function fetchSource(source) {
 }
 
 // ── Call Claude to analyse all sources ───────────────────────────────────────
-async function analyseWithClaude() {
-  const prompt = `Search the web for the latest news and official announcements about Netherlands naturalisation language requirement changes. 
-  
-  Specifically look for: any plans, proposals, or enacted changes to raise the Dutch naturalisation language requirement from A2 to B1 (or any other level).
-  
-  Search these topics:
-  - "Netherlands naturalisation language requirement B1 2024 2025"
-  - "inburgering naturalisatie taaleis B1 wijziging"
-  - site:ind.nl naturalisation language
-  - site:rijksoverheid.nl naturalisatie taaleis
-  
-  Respond ONLY with valid JSON (no markdown):
-  {
-    "changeDetected": true | false,
-    "confidence": "high" | "medium" | "low",
-    "summary": "2-3 sentence summary",
-    "relevantExcerpts": ["excerpt 1", "excerpt 2"],
-    "relevantUrls": ["url1", "url2"],
-    "currentStatus": "What the current policy says",
-    "recommendation": "What the user should do next"
-  }`;
+async function analyseWithClaude(scrapedSources) {
+  console.log("[Claude] 1. Building prompt...");
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1000,
-      /*tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-        },
-      ],*/
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const sourceSummaries = scrapedSources
+    .map(
+      (s, i) =>
+        `SOURCE ${i + 1}: ${s.name}\nURL: ${s.url}\n${s.error ? `ERROR: ${s.error}` : `CONTENT:\n${s.content}`}`,
+    )
+    .join("\n\n---\n\n");
 
-  if (!response.ok) {
-    throw new Error(
-      `Claude API error: ${response.status} ${response.statusText}`,
-    );
+  const prompt = `You are monitoring Dutch naturalisation policy. Has the Netherlands announced any change to raise the language requirement from A2 to B1?
+
+${sourceSummaries}
+
+Respond ONLY with this exact JSON, no other text:
+{"changeDetected":false,"confidence":"low","summary":"test","relevantExcerpts":[],"relevantUrls":[],"currentStatus":"unknown","recommendation":"check manually"}`;
+
+  console.log("[Claude] 2. Prompt built, length:", prompt.length);
+  console.log("[Claude] 3. API key exists:", !!process.env.ANTHROPIC_API_KEY);
+  console.log("[Claude] 4. Calling fetch...");
+
+  let response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    console.log("[Claude] 5. Got response, status:", response.status);
+  } catch (fetchErr) {
+    console.error("[Claude] 5. FETCH THREW ERROR:", fetchErr.message);
+    throw fetchErr;
   }
 
-  const data = await response.json();
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("[Claude] 6. Non-OK response body:", errText);
+    throw new Error(`Claude API ${response.status}: ${errText}`);
+  }
 
-  // Extract the final text block (after web search tool use)
+  console.log("[Claude] 6. Parsing response JSON...");
+  let data;
+  try {
+    data = await response.json();
+    console.log("[Claude] 7. Parsed OK, stop_reason:", data.stop_reason);
+    console.log("[Claude] 8. Content blocks:", data.content?.length);
+  } catch (parseErr) {
+    console.error("[Claude] 7. JSON PARSE ERROR:", parseErr.message);
+    throw parseErr;
+  }
+
   const textBlock = data.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
     .join("");
+
+  console.log("[Claude] 9. Text output:", textBlock.slice(0, 200));
 
   try {
     const clean = textBlock.replace(/```json|```/g, "").trim();
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+    console.log(
+      "[Claude] 10. JSON parsed OK, changeDetected:",
+      parsed.changeDetected,
+    );
+    return parsed;
   } catch {
+    console.error("[Claude] 10. JSON PARSE FAILED, raw text:", textBlock);
     return {
       changeDetected: false,
       confidence: "low",
-      summary: "Could not parse Claude response: " + textBlock.slice(0, 300),
+      summary: "Parse error: " + textBlock.slice(0, 200),
       relevantExcerpts: [],
       relevantUrls: [],
       currentStatus: "Unknown",
-      recommendation: "Check sources manually.",
+      recommendation: "Check logs",
     };
   }
 }
+
 // ── Send email alert ──────────────────────────────────────────────────────────
 async function sendEmail(analysis, scrapedSources) {
   const transporter = nodemailer.createTransporter({
@@ -235,26 +252,69 @@ async function sendEmail(analysis, scrapedSources) {
 // ── Main agent run ────────────────────────────────────────────────────────────
 async function runAgent({ forceEmail = false } = {}) {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] 🤖 Agent started`);
+  console.log(`[Agent] START ${timestamp}`);
 
-  // Claude searches the web directly — no scraping needed
-  console.log(`[${timestamp}] 🧠 Analysing with Claude web search...`);
-  const analysis = await analyseWithClaude();
-  console.log(`[${timestamp}] 🔍 Change detected: ${analysis.changeDetected}`);
+  console.log(`[Agent] Scraping sources...`);
+  let scrapedSources;
+  try {
+    scrapedSources = await Promise.all(SOURCES.map(fetchSource));
+    console.log(
+      `[Agent] Scraped ${scrapedSources.filter((s) => !s.error).length}/${scrapedSources.length} sources`,
+    );
+    scrapedSources.forEach((s) => {
+      if (s.error) console.error(`[Agent] Scrape error ${s.name}: ${s.error}`);
+      else console.log(`[Agent] Scraped ${s.name}: ${s.content.length} chars`);
+    });
+  } catch (scrapeErr) {
+    console.error(`[Agent] SCRAPE THREW:`, scrapeErr.message);
+    scrapedSources = SOURCES.map((s) => ({
+      ...s,
+      content: "",
+      error: scrapeErr.message,
+    }));
+  }
+
+  console.log(`[Agent] Calling Claude...`);
+  let analysis;
+  try {
+    analysis = await analyseWithClaude(scrapedSources);
+    console.log(
+      `[Agent] Claude done. changeDetected=${analysis.changeDetected}`,
+    );
+  } catch (claudeErr) {
+    console.error(`[Agent] CLAUDE THREW:`, claudeErr.message);
+    analysis = {
+      changeDetected: false,
+      confidence: "low",
+      summary: `Claude error: ${claudeErr.message}`,
+      relevantExcerpts: [],
+      relevantUrls: [],
+      currentStatus: "Error",
+      recommendation: "Check logs",
+    };
+  }
 
   let emailSent = false;
   let emailSubject = null;
 
   if (analysis.changeDetected || forceEmail) {
-    console.log(`[${timestamp}] 📧 Sending email...`);
-    emailSubject = await sendEmail(analysis, SOURCES);
-    emailSent = true;
+    console.log(`[Agent] Sending email...`);
+    try {
+      emailSubject = await sendEmail(analysis, scrapedSources);
+      emailSent = true;
+      console.log(`[Agent] Email sent: ${emailSubject}`);
+    } catch (emailErr) {
+      console.error(`[Agent] EMAIL ERROR:`, emailErr.message);
+    }
+  } else {
+    console.log(`[Agent] No email needed`);
   }
 
+  console.log(`[Agent] DONE`);
   return {
     timestamp,
-    sourcesChecked: SOURCES.length,
-    sourcesSucceeded: SOURCES.length,
+    sourcesChecked: scrapedSources.length,
+    sourcesSucceeded: scrapedSources.filter((s) => !s.error).length,
     analysis,
     emailSent,
     emailSubject,
