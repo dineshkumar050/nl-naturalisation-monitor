@@ -54,40 +54,27 @@ async function fetchSource(source) {
 }
 
 // ── Call Claude to analyse all sources ───────────────────────────────────────
-async function analyseWithClaude(scrapedSources) {
-  const sourceSummaries = scrapedSources
-    .map(
-      (s, i) =>
-        `SOURCE ${i + 1}: ${s.name}\nURL: ${s.url}\n${
-          s.error ? `ERROR: ${s.error}` : `CONTENT:\n${s.content}`
-        }`,
-    )
-    .join("\n\n---\n\n");
-
-  const prompt = `You are an expert monitor tracking Dutch naturalisation policy.
-
-Your specific task: detect any announcements, proposals, consultations, legislative changes, or news articles indicating that the Netherlands plans to raise the language requirement for naturalisation from the current A2 level to B1 (or any other level change).
-
-Analyse the following scraped content from official Dutch government sources:
-
-${sourceSummaries}
-
-Respond ONLY with a valid JSON object (no markdown, no explanation outside JSON):
-{
-  "changeDetected": true | false,
-  "confidence": "high" | "medium" | "low",
-  "summary": "2-3 sentence plain-English summary of what was found",
-  "relevantExcerpts": ["excerpt 1 (max 200 chars)", "excerpt 2", ...],
-  "relevantUrls": ["url1", "url2", ...],
-  "currentStatus": "Brief statement of what the current policy says about language requirements",
-  "recommendation": "What the user should do next (e.g., read specific page, consult lawyer, etc.)"
-}
-
-Rules:
-- Set changeDetected=true ONLY if there is concrete evidence of a planned or enacted change to B1 (or any level).
-- relevantExcerpts should be actual text snippets from the sources, not invented.
-- Keep relevantUrls limited to sources that actually contain relevant info.
-- If all sources errored or had no relevant content, still respond with changeDetected=false and explain in summary.`;
+async function analyseWithClaude() {
+  const prompt = `Search the web for the latest news and official announcements about Netherlands naturalisation language requirement changes. 
+  
+  Specifically look for: any plans, proposals, or enacted changes to raise the Dutch naturalisation language requirement from A2 to B1 (or any other level).
+  
+  Search these topics:
+  - "Netherlands naturalisation language requirement B1 2024 2025"
+  - "inburgering naturalisatie taaleis B1 wijziging"
+  - site:ind.nl naturalisation language
+  - site:rijksoverheid.nl naturalisatie taaleis
+  
+  Respond ONLY with valid JSON (no markdown):
+  {
+    "changeDetected": true | false,
+    "confidence": "high" | "medium" | "low",
+    "summary": "2-3 sentence summary",
+    "relevantExcerpts": ["excerpt 1", "excerpt 2"],
+    "relevantUrls": ["url1", "url2"],
+    "currentStatus": "What the current policy says",
+    "recommendation": "What the user should do next"
+  }`;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -99,6 +86,12 @@ Rules:
     body: JSON.stringify({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1000,
+      tools: [
+        {
+          type: "web_search_20250305",
+          name: "web_search",
+        },
+      ],
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -110,17 +103,21 @@ Rules:
   }
 
   const data = await response.json();
-  const raw = data.content?.[0]?.text || "{}";
+
+  // Extract the final text block (after web search tool use)
+  const textBlock = data.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("");
 
   try {
-    const clean = raw.replace(/```json|```/g, "").trim();
+    const clean = textBlock.replace(/```json|```/g, "").trim();
     return JSON.parse(clean);
   } catch {
     return {
       changeDetected: false,
       confidence: "low",
-      summary:
-        "Claude returned an unparseable response. Raw: " + raw.slice(0, 300),
+      summary: "Could not parse Claude response: " + textBlock.slice(0, 300),
       relevantExcerpts: [],
       relevantUrls: [],
       currentStatus: "Unknown",
@@ -128,7 +125,6 @@ Rules:
     };
   }
 }
-
 // ── Send email alert ──────────────────────────────────────────────────────────
 async function sendEmail(analysis, scrapedSources) {
   const transporter = nodemailer.createTransporter({
@@ -241,42 +237,27 @@ async function runAgent({ forceEmail = false } = {}) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] 🤖 Agent started`);
 
-  // Step 1: Scrape all sources
-  console.log(`[${timestamp}] 📡 Scraping ${SOURCES.length} sources...`);
-  const scrapedSources = await Promise.all(SOURCES.map(fetchSource));
-  const successCount = scrapedSources.filter((s) => !s.error).length;
-  console.log(
-    `[${timestamp}] ✅ Scraped ${successCount}/${SOURCES.length} sources`,
-  );
+  // Claude searches the web directly — no scraping needed
+  console.log(`[${timestamp}] 🧠 Analysing with Claude web search...`);
+  const analysis = await analyseWithClaude();
+  console.log(`[${timestamp}] 🔍 Change detected: ${analysis.changeDetected}`);
 
-  // Step 2: Claude analysis
-  console.log(`[${timestamp}] 🧠 Analysing with Claude...`);
-  const analysis = await analyseWithClaude(scrapedSources);
-  console.log(
-    `[${timestamp}] 🔍 Change detected: ${analysis.changeDetected} (${analysis.confidence})`,
-  );
-
-  // Step 3: Send email if change detected OR forced
   let emailSent = false;
   let emailSubject = null;
 
   if (analysis.changeDetected || forceEmail) {
-    console.log(`[${timestamp}] 📧 Sending email alert...`);
-    emailSubject = await sendEmail(analysis, scrapedSources);
+    console.log(`[${timestamp}] 📧 Sending email...`);
+    emailSubject = await sendEmail(analysis, SOURCES);
     emailSent = true;
-    console.log(`[${timestamp}] ✉️  Email sent: ${emailSubject}`);
-  } else {
-    console.log(`[${timestamp}] 📭 No change – email suppressed`);
   }
 
   return {
     timestamp,
-    sourcesChecked: scrapedSources.length,
-    sourcesSucceeded: successCount,
+    sourcesChecked: SOURCES.length,
+    sourcesSucceeded: SOURCES.length,
     analysis,
     emailSent,
     emailSubject,
   };
 }
-
 module.exports = { runAgent, SOURCES };
