@@ -14,7 +14,9 @@ const SOURCES = [
     name: "IND – Naturalisation conditions",
     url: "https://ind.nl/en/dutch-citizenship/naturalisation",
     selector: "body",
-  },
+  }
+];
+/*,
   {
     name: "Government.nl – Applying for Dutch citizenship",
     url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation",
@@ -29,9 +31,7 @@ const SOURCES = [
     name: "IND – Inburgering taaleis",
     url: "https://ind.nl/nl/naturalisatie",
     selector: "body",
-  },
-];
-
+  },*/ */
 // ── Fetch + parse one source ──────────────────────────────────────────────────
 async function fetchSource(source) {
   try {
