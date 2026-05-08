@@ -8,7 +8,8 @@ module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
   console.log("[RunWithEmail] Calling Claude...");
 
@@ -24,22 +25,35 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 500,
-        messages: [{
-          role: "user",
-          content: `What is the current Dutch naturalisation language requirement — A2 or B1? Have there been any official announcements or proposals to raise it to B1?
+        max_tokens: 1000, // increase from 500 — web search needs more tokens
+        tools: [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: `Search the web right now for the latest information about Netherlands naturalisation language requirements. 
 
-Reply ONLY with valid JSON, no other text:
+Search for:
+1. Current language level required for Dutch naturalisation on ind.nl
+2. Any Dutch government announcements about raising the requirement from A2 to B1
+3. Recent news about "naturalisatie taaleis" changes
+
+After searching, reply ONLY with valid JSON:
 {
   "changeDetected": false,
   "confidence": "medium",
-  "summary": "2-3 sentence summary of current status and any planned changes",
-  "relevantExcerpts": [],
-  "relevantUrls": ["https://ind.nl/en/dutch-citizenship/naturalisation", "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation"],
-  "currentStatus": "What the current policy says about language level",
-  "recommendation": "What the user should do to stay informed"
-}`
-        }],
+  "summary": "2-3 sentence summary based on what you just found online",
+  "relevantExcerpts": ["excerpt from search results"],
+  "relevantUrls": ["actual urls you found"],
+  "currentStatus": "Current policy based on live search results",
+  "recommendation": "What the user should do next"
+}`,
+          },
+        ],
       }),
     });
 
@@ -51,13 +65,24 @@ Reply ONLY with valid JSON, no other text:
     }
 
     const data = await response.json();
-    const textBlock = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+
+    // With web search, content has multiple blocks:
+    // [{ type: "tool_use" }, { type: "tool_result" }, { type: "text", text: "{json...}" }]
+    // We only want the final text block
+    const textBlock = data.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
     console.log("[Claude] Output:", textBlock.slice(0, 200));
 
     try {
       const clean = textBlock.replace(/```json|```/g, "").trim();
       analysis = JSON.parse(clean);
-      console.log("[Claude] Parsed OK. changeDetected:", analysis.changeDetected);
+      console.log(
+        "[Claude] Parsed OK. changeDetected:",
+        analysis.changeDetected,
+      );
     } catch {
       console.error("[Claude] JSON parse failed:", textBlock);
       analysis = {
@@ -70,7 +95,6 @@ Reply ONLY with valid JSON, no other text:
         recommendation: "Check Vercel logs",
       };
     }
-
   } catch (err) {
     console.error("[Claude] ERROR:", err.message);
     analysis = {
@@ -99,18 +123,34 @@ Reply ONLY with valid JSON, no other text:
     });
 
     const SOURCES = [
-      { name: "IND – Naturalisation conditions", url: "https://ind.nl/en/dutch-citizenship/naturalisation" },
-      { name: "Government.nl – Dutch citizenship", url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation" },
-      { name: "Rijksoverheid – Naturalisatie", url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie" },
+      {
+        name: "IND – Naturalisation conditions",
+        url: "https://ind.nl/en/dutch-citizenship/naturalisation",
+      },
+      {
+        name: "Government.nl – Dutch citizenship",
+        url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation",
+      },
+      {
+        name: "Rijksoverheid – Naturalisatie",
+        url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie",
+      },
     ];
 
-    const sourceLinks = SOURCES.map(s => `<li><a href="${s.url}">${s.name}</a></li>`).join("");
-    const relevantLinks = analysis.relevantUrls?.length > 0
-      ? analysis.relevantUrls.map(u => `<li><a href="${u}">${u}</a></li>`).join("")
-      : "<li>No specific URLs flagged</li>";
+    const sourceLinks = SOURCES.map(
+      (s) => `<li><a href="${s.url}">${s.name}</a></li>`,
+    ).join("");
+    const relevantLinks =
+      analysis.relevantUrls?.length > 0
+        ? analysis.relevantUrls
+            .map((u) => `<li><a href="${u}">${u}</a></li>`)
+            .join("")
+        : "<li>No specific URLs flagged</li>";
 
     const alertColor = analysis.changeDetected ? "#e63946" : "#2a9d8f";
-    const alertLabel = analysis.changeDetected ? "⚠️ CHANGE DETECTED" : "✅ No Change Detected";
+    const alertLabel = analysis.changeDetected
+      ? "⚠️ CHANGE DETECTED"
+      : "✅ No Change Detected";
 
     const html = `
 <!DOCTYPE html>
@@ -157,7 +197,6 @@ Reply ONLY with valid JSON, no other text:
 
     emailSent = true;
     console.log("[Email] Sent successfully to", process.env.EMAIL_TO);
-
   } catch (err) {
     console.error("[Email] ERROR:", err.message);
   }
@@ -176,5 +215,9 @@ Reply ONLY with valid JSON, no other text:
   if (global.runLog.length > 20) global.runLog.pop();
 
   console.log("[RunWithEmail] DONE. emailSent:", emailSent);
-  res.json({ message: "Done", emailSent, changeDetected: analysis.changeDetected });
+  res.json({
+    message: "Done",
+    emailSent,
+    changeDetected: analysis.changeDetected,
+  });
 };
