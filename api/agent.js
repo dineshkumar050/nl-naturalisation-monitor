@@ -42,10 +42,11 @@ async function analyseWithClaude() {
         model: "claude-haiku-4-5-20251001", // ← switch to Haiku, fastest model
         max_tokens: 300,
         messages: [
-          {
+          { role: "user", content: "Reply with just the word WORKING" },
+          /*{
             role: "user",
             content: `What is the current Dutch naturalisation language requirement, A2 or B1? Reply ONLY with JSON: {"changeDetected":false,"confidence":"medium","summary":"...","relevantExcerpts":[],"relevantUrls":["https://ind.nl/en/dutch-citizenship/naturalisation"],"currentStatus":"...","recommendation":"..."}`,
-          },
+          },*/
         ],
       }),
     });
