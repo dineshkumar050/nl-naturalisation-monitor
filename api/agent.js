@@ -2,75 +2,86 @@
 const nodemailer = require("nodemailer");
 
 const SOURCES = [
-  { name: "IND – Naturalisation conditions", url: "https://ind.nl/en/dutch-citizenship/naturalisation" },
-  { name: "Government.nl – Dutch citizenship", url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation" },
-  { name: "Rijksoverheid – Naturalisatie", url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie" },
+  {
+    name: "IND – Naturalisation conditions",
+    url: "https://ind.nl/en/dutch-citizenship/naturalisation",
+  },
+  {
+    name: "Government.nl – Dutch citizenship",
+    url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation",
+  },
+  {
+    name: "Rijksoverheid – Naturalisatie",
+    url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie",
+  },
 ];
 
 async function analyseWithClaude() {
   console.log("[Claude] Starting analysis...");
+  console.log(
+    "[Claude] API key starts with:",
+    process.env.ANTHROPIC_API_KEY?.slice(0, 10),
+  );
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 500,
-      messages: [{
-        role: "user",
-        content: `Based on your knowledge, what is the current Dutch naturalisation language requirement — is it A2 or B1? Have there been any announced plans to change it?
-
-Respond ONLY with valid JSON, no other text, no markdown:
-{
-  "changeDetected": false,
-  "confidence": "medium",
-  "summary": "2-3 sentence summary of current status and any planned changes",
-  "relevantExcerpts": [],
-  "relevantUrls": ["https://ind.nl/en/dutch-citizenship/naturalisation", "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation"],
-  "currentStatus": "What the current policy says about language level",
-  "recommendation": "What the user should do to stay informed"
-}`
-      }],
-    }),
-  });
-
-  console.log("[Claude] Response status:", response.status);
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error("[Claude] API error:", errText);
-    throw new Error(`Claude API ${response.status}: ${errText}`);
-  }
-
-  const data = await response.json();
-  console.log("[Claude] Stop reason:", data.stop_reason);
-
-  const textBlock = data.content
-    .filter(b => b.type === "text")
-    .map(b => b.text)
-    .join("");
-
-  console.log("[Claude] Raw output:", textBlock.slice(0, 300));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    console.error("[Claude] TIMEOUT — aborting after 8 seconds");
+    controller.abort();
+  }, 8000);
 
   try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal, // ← attach the timeout
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001", // ← switch to Haiku, fastest model
+        max_tokens: 300,
+        messages: [
+          {
+            role: "user",
+            content: `What is the current Dutch naturalisation language requirement, A2 or B1? Reply ONLY with JSON: {"changeDetected":false,"confidence":"medium","summary":"...","relevantExcerpts":[],"relevantUrls":["https://ind.nl/en/dutch-citizenship/naturalisation"],"currentStatus":"...","recommendation":"..."}`,
+          },
+        ],
+      }),
+    });
+
+    clearTimeout(timeout);
+    console.log("[Claude] Response status:", response.status);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("[Claude] Error body:", errText);
+      throw new Error(`Claude API ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    console.log("[Claude] Stop reason:", data.stop_reason);
+
+    const textBlock = data.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
+    console.log("[Claude] Output:", textBlock.slice(0, 200));
+
     const clean = textBlock.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
-    console.log("[Claude] Parsed OK. changeDetected:", parsed.changeDetected);
-    return parsed;
-  } catch {
-    console.error("[Claude] JSON parse failed, raw:", textBlock);
+    return JSON.parse(clean);
+  } catch (err) {
+    clearTimeout(timeout);
+    console.error("[Claude] CAUGHT ERROR:", err.message);
     return {
       changeDetected: false,
       confidence: "low",
-      summary: "Could not parse Claude response: " + textBlock.slice(0, 200),
+      summary: `Agent error: ${err.message}`,
       relevantExcerpts: [],
       relevantUrls: [],
-      currentStatus: "Unknown — check logs",
-      recommendation: "Check Vercel function logs for details",
+      currentStatus: "Error — check logs",
+      recommendation: "Check Vercel function logs",
     };
   }
 }
@@ -84,16 +95,29 @@ async function sendEmail(analysis, sources) {
     },
   });
 
-  const sourceLinks = sources.map(s => `<li><a href="${s.url}">${s.name}</a></li>`).join("");
-  const relevantLinks = analysis.relevantUrls?.length > 0
-    ? analysis.relevantUrls.map(u => `<li><a href="${u}">${u}</a></li>`).join("")
-    : "<li>No specific URLs flagged</li>";
-  const excerpts = analysis.relevantExcerpts?.length > 0
-    ? analysis.relevantExcerpts.map(e => `<blockquote style="border-left:3px solid #e63946;padding-left:12px;color:#555;font-style:italic">${e}</blockquote>`).join("")
-    : "";
+  const sourceLinks = sources
+    .map((s) => `<li><a href="${s.url}">${s.name}</a></li>`)
+    .join("");
+  const relevantLinks =
+    analysis.relevantUrls?.length > 0
+      ? analysis.relevantUrls
+          .map((u) => `<li><a href="${u}">${u}</a></li>`)
+          .join("")
+      : "<li>No specific URLs flagged</li>";
+  const excerpts =
+    analysis.relevantExcerpts?.length > 0
+      ? analysis.relevantExcerpts
+          .map(
+            (e) =>
+              `<blockquote style="border-left:3px solid #e63946;padding-left:12px;color:#555;font-style:italic">${e}</blockquote>`,
+          )
+          .join("")
+      : "";
 
   const alertColor = analysis.changeDetected ? "#e63946" : "#2a9d8f";
-  const alertLabel = analysis.changeDetected ? "⚠️ CHANGE DETECTED" : "✅ No Change Detected";
+  const alertLabel = analysis.changeDetected
+    ? "⚠️ CHANGE DETECTED"
+    : "✅ No Change Detected";
 
   const html = `
 <!DOCTYPE html>
