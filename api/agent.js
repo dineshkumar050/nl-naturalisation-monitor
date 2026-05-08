@@ -23,68 +23,33 @@ async function analyseWithClaude() {
     process.env.ANTHROPIC_API_KEY?.slice(0, 10),
   );
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => {
-    console.error("[Claude] TIMEOUT — aborting after 8 seconds");
-    controller.abort();
-  }, 8000);
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 100,
+      messages: [{ role: "user", content: "Reply with just the word WORKING" }],
+    }),
+  });
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: controller.signal, // ← attach the timeout
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001", // ← switch to Haiku, fastest model
-        max_tokens: 300,
-        messages: [
-          { role: "user", content: "Reply with just the word WORKING" },
-          /*{
-            role: "user",
-            content: `What is the current Dutch naturalisation language requirement, A2 or B1? Reply ONLY with JSON: {"changeDetected":false,"confidence":"medium","summary":"...","relevantExcerpts":[],"relevantUrls":["https://ind.nl/en/dutch-citizenship/naturalisation"],"currentStatus":"...","recommendation":"..."}`,
-          },*/
-        ],
-      }),
-    });
+  console.log("[Claude] Response status:", response.status);
+  const data = await response.json();
+  console.log("[Claude] Reply:", data.content?.[0]?.text);
 
-    clearTimeout(timeout);
-    console.log("[Claude] Response status:", response.status);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[Claude] Error body:", errText);
-      throw new Error(`Claude API ${response.status}: ${errText}`);
-    }
-
-    const data = await response.json();
-    console.log("[Claude] Stop reason:", data.stop_reason);
-
-    const textBlock = data.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-
-    console.log("[Claude] Output:", textBlock.slice(0, 200));
-
-    const clean = textBlock.replace(/```json|```/g, "").trim();
-    return JSON.parse(clean);
-  } catch (err) {
-    clearTimeout(timeout);
-    console.error("[Claude] CAUGHT ERROR:", err.message);
-    return {
-      changeDetected: false,
-      confidence: "low",
-      summary: `Agent error: ${err.message}`,
-      relevantExcerpts: [],
-      relevantUrls: [],
-      currentStatus: "Error — check logs",
-      recommendation: "Check Vercel function logs",
-    };
-  }
+  return {
+    changeDetected: false,
+    confidence: "low",
+    summary: "Test run — Claude replied: " + data.content?.[0]?.text,
+    relevantExcerpts: [],
+    relevantUrls: [],
+    currentStatus: "Test mode",
+    recommendation: "Test successful",
+  };
 }
 
 async function sendEmail(analysis, sources) {
