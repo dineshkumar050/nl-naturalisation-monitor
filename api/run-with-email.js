@@ -1,7 +1,5 @@
 // api/run-with-email.js
 console.log("[RunWithEmail] Module loading...");
-const { runAgent } = require("./agent");
-console.log("[RunWithEmail] Agent loaded OK");
 
 if (!global.runLog) global.runLog = [];
 
@@ -15,19 +13,49 @@ module.exports = async (req, res) => {
 
   res.json({ message: "Agent triggered with forced email." });
 
-  console.log("[RunWithEmail] Calling runAgent...");
+  console.log("[RunWithEmail] Calling Claude directly...");
+
   try {
-    const result = await runAgent({ forceEmail: true });
-    console.log("[RunWithEmail] runAgent completed");
-    global.runLog.unshift({ ...result, id: Date.now() });
-    if (global.runLog.length > 20) global.runLog.pop();
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 100,
+        messages: [
+          { role: "user", content: "Reply with just the word WORKING" },
+        ],
+      }),
+    });
+
+    console.log("[RunWithEmail] Claude status:", response.status);
+    const data = await response.json();
+    console.log("[RunWithEmail] Claude reply:", data.content?.[0]?.text);
+
+    global.runLog.unshift({
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      analysis: {
+        changeDetected: false,
+        confidence: "low",
+        summary: "Test: Claude replied " + data.content?.[0]?.text,
+        relevantExcerpts: [],
+        relevantUrls: [],
+        currentStatus: "Test mode",
+        recommendation: "Test successful",
+      },
+      emailSent: false,
+    });
   } catch (err) {
     console.error("[RunWithEmail] ERROR:", err.message);
-    console.error("[RunWithEmail] STACK:", err.stack);
     global.runLog.unshift({
+      id: Date.now(),
       timestamp: new Date().toISOString(),
       error: err.message,
-      id: Date.now(),
     });
   }
 };
