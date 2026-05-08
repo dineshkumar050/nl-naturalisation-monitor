@@ -12,7 +12,6 @@
       "destination": "/api/run-with-email.js"
     },
     { "source": "/api/run", "destination": "/api/run.js" },
-    { "source": "/api/sources", "destination": "/api/sources.js" },
-    { "source": "/api/test-claude", "destination": "/api/test-claude.js" }
+    { "source": "/api/sources", "destination": "/api/sources.js" }
   ]
 }
