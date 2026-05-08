@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, useCallback } from "react";
 import "./App.css";
 
@@ -33,6 +32,7 @@ function SourceCard({ source }) {
 function LogEntry({ log }) {
   const [open, setOpen] = useState(false);
   const a = log.analysis;
+
   if (log.error) {
     return (
       <div className="log-entry log-error">
@@ -44,6 +44,7 @@ function LogEntry({ log }) {
       </div>
     );
   }
+
   return (
     <div className="log-entry" onClick={() => setOpen(!open)}>
       <div className="log-header">
@@ -104,13 +105,13 @@ export default function App() {
   const fetchData = useCallback(async () => {
     try {
       const [s, l] = await Promise.all([
-        fetch(`${API}/api/status`).then((r) => r.json()),
-        fetch(`${API}/api/logs`).then((r) => r.json()),
+        fetch(`${API}/api/status`).then(r => r.json()),
+        fetch(`${API}/api/logs`).then(r => r.json()),
       ]);
       setStatus(s);
       setLogs(l.logs || []);
     } catch (err) {
-      showToast("Could not reach API server", "error");
+      showToast("Could not reach API", "error");
     } finally {
       setLoading(false);
     }
@@ -123,16 +124,17 @@ export default function App() {
   }, [fetchData]);
 
   const triggerRun = async (forceEmail = false) => {
-    if (running || status?.isRunning) return;
+    if (running) return;
     setRunning(true);
     const endpoint = forceEmail ? "/api/run-with-email" : "/api/run";
     try {
-      await fetch(`${API}${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" } });
+      await fetch(`${API}${endpoint}`, { method: "POST" });
       showToast(
-        forceEmail ? "Agent triggered — email will be sent regardless of result" : "Agent triggered — check logs in ~30s",
+        forceEmail ? "Agent triggered — email will be sent" : "Agent triggered — check logs in ~15s",
         "success"
       );
       setTimeout(fetchData, 8000);
+      setTimeout(fetchData, 20000);
     } catch {
       showToast("Failed to trigger agent", "error");
     } finally {
@@ -140,14 +142,12 @@ export default function App() {
     }
   };
 
-  const lastAnalysis = logs.find((l) => l.analysis)?.analysis;
+  const lastAnalysis = logs.find(l => l.analysis)?.analysis;
 
   return (
     <div className="app">
-      {/* ── Toast ── */}
       {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
 
-      {/* ── Header ── */}
       <header className="header">
         <div className="header-inner">
           <div className="logo">
@@ -158,24 +158,16 @@ export default function App() {
             </div>
           </div>
           <div className="header-actions">
-            <button
-              className="btn btn-ghost"
-              onClick={() => triggerRun(false)}
-              disabled={running || status?.isRunning}
-            >
-              {running || status?.isRunning ? "⟳ Running…" : "▶ Run Now"}
+            <button className="btn btn-ghost" onClick={() => triggerRun(false)} disabled={running}>
+              {running ? "⟳ Running…" : "▶ Run Now"}
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => triggerRun(true)}
-              disabled={running || status?.isRunning}
-            >
+            <button className="btn btn-primary" onClick={() => triggerRun(true)} disabled={running}>
               ✉ Test Email
             </button>
           </div>
         </div>
         <nav className="nav">
-          {["dashboard", "logs", "sources"].map((t) => (
+          {["dashboard", "logs", "sources"].map(t => (
             <button key={t} className={`nav-tab ${tab === t ? "active" : ""}`} onClick={() => setTab(t)}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
@@ -191,18 +183,14 @@ export default function App() {
           </div>
         ) : (
           <>
-            {/* ── DASHBOARD ── */}
             {tab === "dashboard" && (
               <div className="dashboard">
-                {/* Status cards */}
                 <div className="cards">
-                  <div className="card card-status">
+                  <div className="card">
                     <p className="card-label">Current Status</p>
-                    {lastAnalysis ? (
-                      <StatusBadge detected={lastAnalysis.changeDetected} />
-                    ) : (
-                      <span className="card-value dim">No runs yet</span>
-                    )}
+                    {lastAnalysis
+                      ? <StatusBadge detected={lastAnalysis.changeDetected} />
+                      : <span className="card-value dim">No runs yet</span>}
                   </div>
                   <div className="card">
                     <p className="card-label">Total Runs</p>
@@ -213,17 +201,12 @@ export default function App() {
                     <span className="card-value mono">{status?.schedule || "—"}</span>
                   </div>
                   <div className="card">
-                    <p className="card-label">Next Scheduled</p>
-                    <span className="card-value">
-                      {status?.nextRunTime
-                        ? new Date(status.nextRunTime).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-                        : "—"}
-                    </span>
+                    <p className="card-label">Sources Monitored</p>
+                    <span className="card-value">{status?.sources?.length ?? 0}</span>
                   </div>
                 </div>
 
-                {/* Last analysis */}
-                {lastAnalysis && (
+                {lastAnalysis ? (
                   <div className="analysis-panel">
                     <div className="analysis-header">
                       <h2>Latest Analysis</h2>
@@ -246,9 +229,7 @@ export default function App() {
                         <h3>Relevant Links</h3>
                         <ul className="link-list">
                           {lastAnalysis.relevantUrls.map((u, i) => (
-                            <li key={i}>
-                              <a href={u} target="_blank" rel="noreferrer">↗ {u}</a>
-                            </li>
+                            <li key={i}><a href={u} target="_blank" rel="noreferrer">↗ {u}</a></li>
                           ))}
                         </ul>
                       </div>
@@ -260,19 +241,16 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                )}
-
-                {!lastAnalysis && (
+                ) : (
                   <div className="empty-state">
                     <div className="empty-icon">🔍</div>
                     <h3>No runs yet</h3>
-                    <p>Click <strong>Run Now</strong> to start the first analysis, or wait for the scheduled run.</p>
+                    <p>Click <strong>Run Now</strong> to start the first analysis.</p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* ── LOGS ── */}
             {tab === "logs" && (
               <div className="logs-panel">
                 <div className="logs-header">
@@ -286,15 +264,12 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="logs-list">
-                    {logs.map((log) => (
-                      <LogEntry key={log.id || log.timestamp} log={log} />
-                    ))}
+                    {logs.map(log => <LogEntry key={log.id || log.timestamp} log={log} />)}
                   </div>
                 )}
               </div>
             )}
 
-            {/* ── SOURCES ── */}
             {tab === "sources" && (
               <div className="sources-panel">
                 <div className="sources-header">
@@ -302,12 +277,10 @@ export default function App() {
                   <span className="logs-count">{status?.sources?.length || 0} sources</span>
                 </div>
                 <p className="sources-desc">
-                  The agent scrapes these official Dutch government and IND pages on every run, then uses Claude AI to analyse the content for any language requirement changes.
+                  Claude checks these official Dutch government sources on every run for any language requirement changes.
                 </p>
                 <div className="sources-list">
-                  {(status?.sources || []).map((s, i) => (
-                    <SourceCard key={i} source={s} />
-                  ))}
+                  {(status?.sources || []).map((s, i) => <SourceCard key={i} source={s} />)}
                 </div>
               </div>
             )}
@@ -316,7 +289,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        <p>Powered by Claude AI · Auto-refreshes every 30s · Built for Netherlands naturalisation tracking</p>
+        <p>Powered by Claude AI · Auto-refreshes every 30s · Netherlands naturalisation tracker</p>
       </footer>
     </div>
   );

@@ -1,21 +1,14 @@
 // api/agent.js
-// ─────────────────────────────────────────────────────────────────────────────
-// Agentic AI Monitor: Netherlands Naturalisation Language Level (A2 → B1)
-// Uses Claude web search to check for policy changes — no scraping needed.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const nodemailer = require("nodemailer");
 
-// ── Sources (used in email footer only — Claude searches these directly) ──────
 const SOURCES = [
   { name: "IND – Naturalisation conditions", url: "https://ind.nl/en/dutch-citizenship/naturalisation" },
   { name: "Government.nl – Dutch citizenship", url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation" },
   { name: "Rijksoverheid – Naturalisatie", url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie" },
 ];
 
-// ── Claude web search analysis ────────────────────────────────────────────────
 async function analyseWithClaude() {
-  console.log("[Claude] Starting web search analysis...");
+  console.log("[Claude] Starting analysis...");
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -26,26 +19,20 @@ async function analyseWithClaude() {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1000,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      max_tokens: 500,
       messages: [{
         role: "user",
-        content: `Search the web for the latest official information about Netherlands naturalisation language requirements.
+        content: `Based on your knowledge, what is the current Dutch naturalisation language requirement — is it A2 or B1? Have there been any announced plans to change it?
 
-Specifically search for:
-1. Current language level required for Dutch naturalisation (is it A2 or has it changed?)
-2. Any announcements or proposals to raise it to B1
-3. Check ind.nl and rijksoverheid.nl for the latest policy
-
-After searching, respond ONLY with valid JSON, no other text:
+Respond ONLY with valid JSON, no other text, no markdown:
 {
-  "changeDetected": true or false,
-  "confidence": "high" or "medium" or "low",
-  "summary": "2-3 sentence summary of what you found",
-  "relevantExcerpts": ["excerpt 1", "excerpt 2"],
-  "relevantUrls": ["url1", "url2"],
+  "changeDetected": false,
+  "confidence": "medium",
+  "summary": "2-3 sentence summary of current status and any planned changes",
+  "relevantExcerpts": [],
+  "relevantUrls": ["https://ind.nl/en/dutch-citizenship/naturalisation", "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation"],
   "currentStatus": "What the current policy says about language level",
-  "recommendation": "What the user should do next"
+  "recommendation": "What the user should do to stay informed"
 }`
       }],
     }),
@@ -61,9 +48,7 @@ After searching, respond ONLY with valid JSON, no other text:
 
   const data = await response.json();
   console.log("[Claude] Stop reason:", data.stop_reason);
-  console.log("[Claude] Content blocks:", data.content?.length);
 
-  // Extract final text block after web search tool use
   const textBlock = data.content
     .filter(b => b.type === "text")
     .map(b => b.text)
@@ -81,16 +66,15 @@ After searching, respond ONLY with valid JSON, no other text:
     return {
       changeDetected: false,
       confidence: "low",
-      summary: "Could not parse response: " + textBlock.slice(0, 200),
+      summary: "Could not parse Claude response: " + textBlock.slice(0, 200),
       relevantExcerpts: [],
       relevantUrls: [],
-      currentStatus: "Unknown",
-      recommendation: "Check Vercel logs for details",
+      currentStatus: "Unknown — check logs",
+      recommendation: "Check Vercel function logs for details",
     };
   }
 }
 
-// ── Send email alert ──────────────────────────────────────────────────────────
 async function sendEmail(analysis, sources) {
   const transporter = nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || "gmail",
@@ -106,7 +90,7 @@ async function sendEmail(analysis, sources) {
     : "<li>No specific URLs flagged</li>";
   const excerpts = analysis.relevantExcerpts?.length > 0
     ? analysis.relevantExcerpts.map(e => `<blockquote style="border-left:3px solid #e63946;padding-left:12px;color:#555;font-style:italic">${e}</blockquote>`).join("")
-    : "<p>No specific excerpts.</p>";
+    : "";
 
   const alertColor = analysis.changeDetected ? "#e63946" : "#2a9d8f";
   const alertLabel = analysis.changeDetected ? "⚠️ CHANGE DETECTED" : "✅ No Change Detected";
@@ -128,7 +112,7 @@ async function sendEmail(analysis, sources) {
       </div>
       <h3 style="color:#003087">Current Policy Status</h3>
       <p style="background:#f1f3f5;padding:12px 16px;border-radius:6px">${analysis.currentStatus}</p>
-      ${analysis.relevantExcerpts?.length > 0 ? `<h3 style="color:#003087">Relevant Excerpts</h3>${excerpts}` : ""}
+      ${excerpts ? `<h3 style="color:#003087">Relevant Excerpts</h3>${excerpts}` : ""}
       <h3 style="color:#003087">Key Links</h3>
       <ul>${relevantLinks}</ul>
       <h3 style="color:#003087">Recommendation</h3>
@@ -158,7 +142,6 @@ async function sendEmail(analysis, sources) {
   return subject;
 }
 
-// ── Main agent run ────────────────────────────────────────────────────────────
 async function runAgent({ forceEmail = false } = {}) {
   const timestamp = new Date().toISOString();
   console.log(`[Agent] START ${timestamp}`);
@@ -175,7 +158,7 @@ async function runAgent({ forceEmail = false } = {}) {
       relevantExcerpts: [],
       relevantUrls: [],
       currentStatus: "Error during check",
-      recommendation: "Check Vercel logs",
+      recommendation: "Check Vercel function logs",
     };
   }
 
@@ -191,7 +174,7 @@ async function runAgent({ forceEmail = false } = {}) {
       console.error(`[Agent] Email error:`, err.message);
     }
   } else {
-    console.log(`[Agent] No change, no email`);
+    console.log(`[Agent] No change detected, no email sent`);
   }
 
   console.log(`[Agent] DONE`);

@@ -1,16 +1,13 @@
 {
   "version": 2,
   "functions": {
-    "api/run.js": { "maxDuration": 60 },
-    "api/run-with-email.js": { "maxDuration": 60 }
+    "api/run.js": { "maxDuration": 30 },
+    "api/run-with-email.js": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/api/status", "destination": "/api/status.js" },
     { "source": "/api/logs", "destination": "/api/logs.js" },
-    {
-      "source": "/api/run-with-email",
-      "destination": "/api/run-with-email.js"
-    },
+    { "source": "/api/run-with-email", "destination": "/api/run-with-email.js" },
     { "source": "/api/run", "destination": "/api/run.js" },
     { "source": "/api/sources", "destination": "/api/sources.js" }
   ]

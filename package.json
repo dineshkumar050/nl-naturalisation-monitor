@@ -1,7 +1,7 @@
 {
   "name": "nl-naturalisation-monitor",
   "version": "1.0.0",
-  "description": "Agentic AI monitor for Netherlands naturalisation language level changes (A2 → B1)",
+  "description": "Agentic AI monitor for Netherlands naturalisation language level changes (A2 to B1)",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "server": "node api/server.js",
