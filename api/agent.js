@@ -1,5 +1,4 @@
 // api/agent.js
-const nodemailer = require("nodemailer");
 
 const SOURCES = [
   {
@@ -53,6 +52,7 @@ async function analyseWithClaude() {
 }
 
 async function sendEmail(analysis, sources) {
+  const nodemailer = require("nodemailer");
   const transporter = nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || "gmail",
     auth: {
