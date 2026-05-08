@@ -11,9 +11,8 @@ module.exports = async (req, res) => {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  res.json({ message: "Agent triggered with forced email." });
-
-  console.log("[RunWithEmail] Calling Claude directly...");
+  // DON'T respond yet — do Claude first
+  console.log("[RunWithEmail] Calling Claude...");
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -50,6 +49,9 @@ module.exports = async (req, res) => {
       },
       emailSent: false,
     });
+
+    // respond AFTER Claude is done
+    res.json({ message: "Done", reply: data.content?.[0]?.text });
   } catch (err) {
     console.error("[RunWithEmail] ERROR:", err.message);
     global.runLog.unshift({
@@ -57,5 +59,6 @@ module.exports = async (req, res) => {
       timestamp: new Date().toISOString(),
       error: err.message,
     });
+    res.json({ error: err.message });
   }
 };
