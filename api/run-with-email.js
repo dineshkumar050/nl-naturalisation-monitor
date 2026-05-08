@@ -35,22 +35,14 @@ module.exports = async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `Search the web right now for the latest information about Netherlands naturalisation language requirements. 
-
-Search for:
-1. Current language level required for Dutch naturalisation on ind.nl
-2. Any Dutch government announcements about raising the requirement from A2 to B1
-3. Recent news about "naturalisatie taaleis" changes
-
-After searching, reply ONLY with valid JSON:
+            content: `Search the web for the latest Netherlands naturalisation language requirements and return your findings as JSON with this exact structure:
 {
-  "changeDetected": false,
-  "confidence": "medium",
-  "summary": "2-3 sentence summary based on what you just found online",
-  "relevantExcerpts": ["excerpt from search results"],
-  "relevantUrls": ["actual urls you found"],
-  "currentStatus": "Current policy based on live search results",
-  "recommendation": "What the user should do next"
+  "changeDetected": boolean,
+  "confidence": "low" | "medium" | "high",
+  "summary": "2-3 sentence summary",
+  "relevantUrls": ["url1", "url2"],
+  "currentStatus": "string",
+  "recommendation": "string"
 }`,
           },
         ],
