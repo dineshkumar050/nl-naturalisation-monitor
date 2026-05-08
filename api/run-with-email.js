@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `Search the web for the latest Netherlands naturalisation language requirements and return your findings as JSON with this exact structure:
+            content: `I dont want any additional text in front of the JSON like Example : Here is the JSON requested like that. Search the web for the latest Netherlands naturalisation language requirements and return your findings as JSON with this exact structure:
 {
   "changeDetected": boolean,
   "confidence": "low" | "medium" | "high",
