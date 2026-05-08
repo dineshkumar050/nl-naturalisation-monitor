@@ -8,7 +8,8 @@ module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
   console.log("[Run] Calling Claude...");
 
@@ -23,22 +24,27 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 500,
-        messages: [{
-          role: "user",
-          content: `What is the current Dutch naturalisation language requirement — A2 or B1? Have there been any official announcements or proposals to raise it to B1?
-
-Reply ONLY with valid JSON, no other text:
+        max_tokens: 1000, // increase from 500 — web search needs more tokens
+        tools: [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: `I dont want any additional text in front of the JSON like Example : Here is the JSON requested like that. Search the web for the latest Netherlands naturalisation language requirements and return your findings as JSON with this exact structure:
 {
-  "changeDetected": false,
-  "confidence": "medium",
-  "summary": "2-3 sentence summary of current status and any planned changes",
-  "relevantExcerpts": [],
-  "relevantUrls": ["https://ind.nl/en/dutch-citizenship/naturalisation", "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation"],
-  "currentStatus": "What the current policy says about language level",
-  "recommendation": "What the user should do to stay informed"
-}`
-        }],
+  "changeDetected": boolean,
+  "confidence": "low" | "medium" | "high",
+  "summary": "2-3 sentence summary",
+  "relevantUrls": ["url1", "url2"],
+  "currentStatus": "string",
+  "recommendation": "string"
+}`,
+          },
+        ],
       }),
     });
 
@@ -50,13 +56,24 @@ Reply ONLY with valid JSON, no other text:
     }
 
     const data = await response.json();
-    const textBlock = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+
+    // With web search, content has multiple blocks:
+    // [{ type: "tool_use" }, { type: "tool_result" }, { type: "text", text: "{json...}" }]
+    // We only want the final text block
+    const textBlock = data.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("");
+
     console.log("[Claude] Output:", textBlock.slice(0, 200));
 
     try {
       const clean = textBlock.replace(/```json|```/g, "").trim();
       analysis = JSON.parse(clean);
-      console.log("[Claude] Parsed OK. changeDetected:", analysis.changeDetected);
+      console.log(
+        "[Claude] Parsed OK. changeDetected:",
+        analysis.changeDetected,
+      );
     } catch {
       analysis = {
         changeDetected: false,
@@ -68,7 +85,6 @@ Reply ONLY with valid JSON, no other text:
         recommendation: "Check Vercel logs",
       };
     }
-
   } catch (err) {
     console.error("[Claude] ERROR:", err.message);
     analysis = {
@@ -94,14 +110,26 @@ Reply ONLY with valid JSON, no other text:
       });
 
       const SOURCES = [
-        { name: "IND – Naturalisation conditions", url: "https://ind.nl/en/dutch-citizenship/naturalisation" },
-        { name: "Government.nl – Dutch citizenship", url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation" },
-        { name: "Rijksoverheid – Naturalisatie", url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie" },
+        {
+          name: "IND – Naturalisation conditions",
+          url: "https://ind.nl/en/dutch-citizenship/naturalisation",
+        },
+        {
+          name: "Government.nl – Dutch citizenship",
+          url: "https://www.government.nl/topics/dutch-nationality/applying-for-dutch-naturalisation",
+        },
+        {
+          name: "Rijksoverheid – Naturalisatie",
+          url: "https://www.rijksoverheid.nl/onderwerpen/nederlanderschap/naturalisatie",
+        },
       ];
 
-      const relevantLinks = analysis.relevantUrls?.length > 0
-        ? analysis.relevantUrls.map(u => `<li><a href="${u}">${u}</a></li>`).join("")
-        : "<li>No specific URLs flagged</li>";
+      const relevantLinks =
+        analysis.relevantUrls?.length > 0
+          ? analysis.relevantUrls
+              .map((u) => `<li><a href="${u}">${u}</a></li>`)
+              .join("")
+          : "<li>No specific URLs flagged</li>";
 
       const html = `
 <!DOCTYPE html>
@@ -123,7 +151,7 @@ Reply ONLY with valid JSON, no other text:
       <h3 style="color:#003087">Recommendation</h3>
       <p>${analysis.recommendation}</p>
       <hr style="border:none;border-top:1px solid #e9ecef;margin:24px 0"/>
-      <ul style="font-size:13px">${SOURCES.map(s => `<li><a href="${s.url}">${s.name}</a></li>`).join("")}</ul>
+      <ul style="font-size:13px">${SOURCES.map((s) => `<li><a href="${s.url}">${s.name}</a></li>`).join("")}</ul>
     </div>
   </div>
 </body>
@@ -158,5 +186,9 @@ Reply ONLY with valid JSON, no other text:
   if (global.runLog.length > 20) global.runLog.pop();
 
   console.log("[Run] DONE");
-  res.json({ message: "Done", emailSent, changeDetected: analysis.changeDetected });
+  res.json({
+    message: "Done",
+    emailSent,
+    changeDetected: analysis.changeDetected,
+  });
 };
